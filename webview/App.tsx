@@ -1,9 +1,10 @@
-import React, {useCallback, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Alert,
   Dimensions,
   SafeAreaView,
   StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
   View,
@@ -58,13 +59,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  timeText: {
+    color: '#aeaeb2',
+    alignSelf: 'flex-end',
+    marginTop: 15,
+    marginRight: 20,
+    fontSize: 15,
+  },
 });
+
+const formatTime = (seconds: number) => {
+  const minutes = Math.floor(seconds / 60);
+  const secondsLeft = Math.floor(seconds % 60);
+  const formattedMinutes = minutes.toString().padStart(2, '0');
+  const formattedSeconds = secondsLeft.toString().padStart(2, '0');
+  return `${formattedMinutes}:${formattedSeconds}`;
+};
 
 function App() {
   const [url, setUrl] = useState('');
   const [youtubeId, setYoutubeId] = useState('');
   const webViewRef = useRef<WebView>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
 
   const onPressAddLink = useCallback(() => {
     const {
@@ -112,12 +130,18 @@ function App() {
                 }
               });
             }
-
+            // 여러 데이터를 보낼때 사용될 프로토콜 함수를 만들어서 사용
+            function postMessageToRN(type, data) {
+              const message = JSON.stringify({type, data});
+              window.ReactNativeWebView.postMessage(message);
+            }
+            
             function onPlayerReady(event) {
+              postMessageToRN('duration', player.getDuration());
             }
 
             function onPlayerStateChange(event) {
-              window.ReactNativeWebView.postMessage(event.data);
+              postMessageToRN('playerState', event.data);
             }
           </script>
         </body>
@@ -138,6 +162,27 @@ function App() {
       webViewRef.current.injectJavaScript('player.pauseVideo(); true;');
     }
   }, []);
+
+  const durationText = useMemo(() => {
+    return `${formatTime(Math.floor(duration))}`;
+  }, [duration]);
+
+  const currentTimeText = useMemo(() => {
+    return `${formatTime(Math.floor(currentTime))}`;
+  }, [currentTime]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      const id = setInterval(() => {
+        if (webViewRef.current !== null) {
+          webViewRef.current.injectJavaScript(
+            'postMessageToRN("currentTime", player.getCurrentTime()); true;',
+          );
+        }
+      }, 50);
+      return () => clearInterval(id);
+    }
+  }, [isPlaying]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -170,15 +215,20 @@ function App() {
             // android에서 현재 유투브의 자동 재생 기능을 허용함
             mediaPlaybackRequiresUserAction={false}
             onMessage={event => {
-              if (event.nativeEvent.data === '1') {
-                setIsPlaying(true);
-              } else {
-                setIsPlaying(false);
+              const {type, data} = JSON.parse(event.nativeEvent.data);
+              if (type === 'playerState') {
+                setIsPlaying(data === 1);
+              } else if (type === 'duration') {
+                setDuration(data);
+              } else if (type === 'currentTime') {
+                setCurrentTime(data);
               }
             }}
           />
         )}
       </View>
+      <Text
+        style={styles.timeText}>{`${currentTimeText} / ${durationText}`}</Text>
       <View style={styles.controller}>
         {isPlaying ? (
           <TouchableOpacity style={styles.playButton} onPress={onPressPause}>
