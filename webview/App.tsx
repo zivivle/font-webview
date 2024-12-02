@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {
   Alert,
   Dimensions,
@@ -41,11 +41,30 @@ const styles = StyleSheet.create({
     height: YT_HEIGHT,
     backgroundColor: '#4a4a4a',
   },
+  controller: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 10,
+    marginHorizontal: 16,
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playButton: {
+    height: 50,
+    width: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
 
 function App() {
   const [url, setUrl] = useState('');
   const [youtubeId, setYoutubeId] = useState('');
+  const webViewRef = useRef<WebView>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const onPressAddLink = useCallback(() => {
     const {
@@ -63,7 +82,7 @@ function App() {
     const html = `
     <!DOCTYPE html>
       <html>
-        <!-- 뷰포트를 디바이스 크기에 맞게 변경하도록 해줌 -->
+        <!-- 뷰포트를 디바이스 크기에 맞게 변경 -->
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
         </head>
@@ -94,23 +113,11 @@ function App() {
               });
             }
 
-            // 4. The API will call this function when the video player is ready.
             function onPlayerReady(event) {
-              event.target.playVideo();
             }
 
-            // 5. The API calls this function when the player's state changes.
-            //    The function indicates that when playing a video (state=1),
-            //    the player should play for six seconds and then stop.
-            var done = false;
             function onPlayerStateChange(event) {
-              if (event.data == YT.PlayerState.PLAYING && !done) {
-                setTimeout(stopVideo, 6000);
-                done = true;
-              }
-            }
-            function stopVideo() {
-              player.stopVideo();
+              window.ReactNativeWebView.postMessage(event.data);
             }
           </script>
         </body>
@@ -119,6 +126,19 @@ function App() {
       html,
     };
   }, [youtubeId]);
+
+  const onPressPlay = useCallback(() => {
+    if (webViewRef.current !== null) {
+      webViewRef.current.injectJavaScript('player.playVideo(); true;');
+    }
+  }, []);
+
+  const onPressPause = useCallback(() => {
+    if (webViewRef.current !== null) {
+      webViewRef.current.injectJavaScript('player.pauseVideo(); true;');
+    }
+  }, []);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.inputContainer}>
@@ -142,13 +162,32 @@ function App() {
       <View style={styles.youtubeContainer}>
         {youtubeId.length > 0 && (
           <WebView
+            ref={webViewRef}
             source={source}
             scrollEnabled={false}
             // ios에서 다른 창이 띄워지는걸 막고 인라인 재생되도록 해줌
             allowsInlineMediaPlayback
             // android에서 현재 유투브의 자동 재생 기능을 허용함
             mediaPlaybackRequiresUserAction={false}
+            onMessage={event => {
+              if (event.nativeEvent.data === '1') {
+                setIsPlaying(true);
+              } else {
+                setIsPlaying(false);
+              }
+            }}
           />
+        )}
+      </View>
+      <View style={styles.controller}>
+        {isPlaying ? (
+          <TouchableOpacity style={styles.playButton} onPress={onPressPause}>
+            <Icon name="pause-circle" size={41.67} color="#e5e5ea" />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.playButton} onPress={onPressPlay}>
+            <Icon name="play-circle" size={39.58} color="#00dda8" />
+          </TouchableOpacity>
         )}
       </View>
     </SafeAreaView>
