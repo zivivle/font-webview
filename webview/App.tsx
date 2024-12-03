@@ -1,7 +1,9 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Alert,
+  Animated,
   Dimensions,
+  PanResponder,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -66,6 +68,25 @@ const styles = StyleSheet.create({
     marginRight: 20,
     fontSize: 15,
   },
+  seekBarContainer: {
+    height: 3,
+    backgroundColor: '#d4d4d4',
+    pointerEvents: 'box-none',
+  },
+  seekBarProgress: {
+    height: 3,
+    backgroundColor: '#00dda8',
+    width: '0%',
+    pointerEvents: 'none',
+  },
+  seekBarCircle: {
+    width: 14,
+    height: 14,
+    backgroundColor: '#00dda8',
+    borderRadius: 14 / 2,
+    position: 'absolute',
+    top: (-14 + 3) / 2,
+  },
 });
 
 const formatTime = (seconds: number) => {
@@ -79,6 +100,7 @@ const formatTime = (seconds: number) => {
 function App() {
   const [url, setUrl] = useState('');
   const [youtubeId, setYoutubeId] = useState('');
+  const seekBarAnimeRef = useRef(new Animated.Value(0));
   const webViewRef = useRef<WebView>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -184,6 +206,43 @@ function App() {
     }
   }, [isPlaying]);
 
+  useEffect(() => {
+    Animated.timing(seekBarAnimeRef.current, {
+      toValue: currentTime,
+      duration: 50,
+      useNativeDriver: false,
+    }).start();
+  }, [currentTime]);
+
+  // duration이 변경될때마다 durationInSecondsRef 값이 변경되도록 하기 위해서
+  const durationInSecondsRef = useRef(duration);
+  durationInSecondsRef.current = duration;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        // TODO: pause 비디오
+        webViewRef.current?.injectJavaScript('player.pauseVideo(); true;');
+      },
+      onPanResponderMove: (e, gesture) => {
+        const newTimeInSeconds =
+          (gesture.moveX / YT_WIDTH) * durationInSecondsRef.current;
+        seekBarAnimeRef.current.setValue(newTimeInSeconds);
+      },
+      onPanResponderRelease: (e, gesture) => {
+        // TODO: 비디오를 seek & play
+        const newTimeInSeconds =
+          (gesture.moveX / YT_WIDTH) * durationInSecondsRef.current;
+        webViewRef.current?.injectJavaScript(
+          `player.seekTo(${newTimeInSeconds},); true;`,
+        );
+        webViewRef.current?.injectJavaScript('player.playVideo(); true;');
+      },
+    }),
+  ).current;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.inputContainer}>
@@ -226,6 +285,30 @@ function App() {
             }}
           />
         )}
+      </View>
+      <View style={styles.seekBarContainer} {...panResponder.panHandlers}>
+        <Animated.View
+          style={[
+            styles.seekBarProgress,
+            {
+              width: seekBarAnimeRef.current.interpolate({
+                inputRange: [0, duration],
+                outputRange: ['0%', '100%'],
+              }),
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.seekBarCircle,
+            {
+              left: seekBarAnimeRef.current.interpolate({
+                inputRange: [0, duration],
+                outputRange: ['0%', '100%'],
+              }),
+            },
+          ]}
+        />
       </View>
       <Text
         style={styles.timeText}>{`${currentTimeText} / ${durationText}`}</Text>
